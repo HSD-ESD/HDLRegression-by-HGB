@@ -21,6 +21,9 @@ This Extension is maintained by Jakob Jungreuthmayer at [University of Applied S
     - Press the run button to run a unit test in background
     - Press the debug button to run a test in GUI mode
 
+### Requirements
+- HDLRegression version 0.43 or higher
+
 ## History
 This Visual Studio Code extension was made by [Jakob Jungreuthmayer](https://github.com/jakobjung10) 
 during his bachelor`s degree at [University of Applied Sciences Upper Austria - Campus Hagenberg](https://www.fh-ooe.at/campus-hagenberg/)

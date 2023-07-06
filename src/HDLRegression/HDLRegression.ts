@@ -16,7 +16,7 @@ import { HDLRegressionData, HDLRegressionFile, HDLRegressionTest } from './HDLRe
 //module-internal constants
 const cHDLRegressionLtcMatcher : RegExp = /^TC:(\d+)\s+-\s+(\w+)\.(\w+)\.(\w+)/;
 const cHDLRegressionLibraryMatcher : RegExp = /\|\-\-\[(\d+)\]\-\-\s+(.+)/;
-const cHDLRegressionFileMatcher = /\|--\[\d+\]--\s*(.+?)(?:\(TB\))?$/;
+const cHDLRegressionFileMatcher = /\|---\s(.+?)(?:\.(\w+))?$/;
 
 
 export class HDLRegression {
@@ -33,7 +33,7 @@ export class HDLRegression {
         this.mOutputChannel = vscode.window.createOutputChannel("HDLRegressionByHGB.HDLRegression");
     }
 
-    public async FindHDLRegressionScripts(
+    public async FindScripts(
         workspaceFolder: vscode.WorkspaceFolder
     ): Promise<string[]> {
 
@@ -111,11 +111,11 @@ export class HDLRegression {
         return "";
     }
 
-    public async GetHDLRegressionData(hdlregressionScript : string): Promise<HDLRegressionData> 
+    public async GetData(hdlregressionScript : string): Promise<HDLRegressionData> 
     {
 
-        const testcases : HDLRegressionTest[] = await this.GetHDLRegressionTestcases(hdlregressionScript);
-        const files : HDLRegressionFile[] = await this.GetHDLRegressionFiles(hdlregressionScript);
+        const testcases : HDLRegressionTest[] = await this.GetTestcases(hdlregressionScript);
+        const files : HDLRegressionFile[] = await this.GetFiles(hdlregressionScript);
         
         const data : HDLRegressionData =
         {
@@ -127,7 +127,7 @@ export class HDLRegression {
     }
 
 
-    public async GetHDLRegressionTestcases(hdlregressionScript : string): Promise<HDLRegressionTest[]> {
+    public async GetTestcases(hdlregressionScript : string): Promise<HDLRegressionTest[]> {
         
         const options = ['-ltc'];
 
@@ -171,7 +171,7 @@ export class HDLRegression {
         return HDLRegressionTestCases;
     }
 
-    public async GetHDLRegressionFiles(hdlregressionScript : string): Promise<HDLRegressionFile[]> {
+    public async GetFiles(hdlregressionScript : string): Promise<HDLRegressionFile[]> {
         
         const options = ['-lco'];
 
@@ -195,15 +195,16 @@ export class HDLRegression {
 
                     if(HDLRegressionLibrary)
                     {
-                        currentLibrary = HDLRegressionLibrary[1];
+                        currentLibrary = HDLRegressionLibrary[2].trim();
                     }
 
                     const HDLRegressionFile = cHDLRegressionFileMatcher.exec(line);
 
                     if(HDLRegressionFile)
                     {
-                        const fileName = HDLRegressionFile[1].trim();
-                        const isTestbench = HDLRegressionFile[2] === 'TB';
+                        let fileName : string = HDLRegressionFile[1].trim();
+                        const isTestbench : boolean = HDLRegressionFile[1].includes("(TB)");
+                        fileName = isTestbench ? fileName.replace("(TB)", "").trim() : fileName;
 
                         const regressionFile : HDLRegressionFile =
                         {

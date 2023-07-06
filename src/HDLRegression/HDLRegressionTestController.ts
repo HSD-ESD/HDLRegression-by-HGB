@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import exp = require("constants");
 import readline = require('readline');
 import { ChildProcess } from "child_process";
-import { HDLRegressionTest } from "./HDLRegressionPackage";
+import { HDLRegressionFile, HDLRegressionTest } from "./HDLRegressionPackage";
 
 //--------------------------------------------
 // module-internal constants
@@ -135,7 +135,7 @@ export class HDLRegressionTestController {
     public async LoadTests() : Promise<void>
     {
         //Find all HDLRegression-Scripts in WorkSpace
-        const HDLRegressionScripts : string[] = await this.mHDLRegression.FindHDLRegressionScripts((vscode.workspace.workspaceFolders || [])[0]);
+        const HDLRegressionScripts : string[] = await this.mHDLRegression.FindScripts((vscode.workspace.workspaceFolders || [])[0]);
 
         //delete all old items
         for(const [id,item] of this.mTestController.items)
@@ -150,7 +150,7 @@ export class HDLRegressionTestController {
     private async LoadHDLRegressionScript(hdlregressionScript : string) : Promise<boolean>
     {
         // get testcases for HDLRegression-Script
-        const tests : HDLRegressionTest[] = await this.mHDLRegression.GetHDLRegressionTestcases(hdlregressionScript);
+        const tests : HDLRegressionTest[] = await this.mHDLRegression.GetTestcases(hdlregressionScript);
 
         //relative path from workspace-folder to HDLRegression-Script 
         const hdlregressionScriptPath : string = path.relative(this.mWorkSpacePath, hdlregressionScript);
@@ -284,7 +284,7 @@ export class HDLRegressionTestController {
         }
 
         //Command-Line-Arguments for HDLRegression
-        let options = [command, testCaseWildCard];
+        let options = [command, testCaseWildCard, "--noColor"];
 
         const hdlregressionOptions = vscode.workspace
             .getConfiguration()
@@ -363,7 +363,7 @@ export class HDLRegressionTestController {
         }
 
         //Command-Line-Arguments for HDLRegression
-        let options = [command, testCaseWildCard, "-g"];
+        let options = [command, testCaseWildCard, "--noColor" ,"-g"];
 
         const hdlregressionOptions = vscode.workspace
             .getConfiguration()
@@ -378,8 +378,6 @@ export class HDLRegressionTestController {
 
     private MatchTestCaseStatus(line : string, testCase : HDLRegressionTest, node : vscode.TestItem, run : vscode.TestRun, hdlregressionScript : string) : void
     {
-        //remove ansi-escape-chars
-        line = line.replace(/\u001b\[\d+(;\d+)*m/g, '');
         //check for pass or fail
         const result = cHDLRegressionTestEnd.exec(line);
         if (result) {
