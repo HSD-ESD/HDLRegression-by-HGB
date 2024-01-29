@@ -76,6 +76,11 @@ export class HDLRegressionTestController {
         };
     }
 
+    public getContext() : vscode.ExtensionContext 
+    {
+        return this.mContext;
+    }
+
     public async RunTests(request : vscode.TestRunRequest) : Promise<void>
     {
         const run : vscode.TestRun = this.mTestController.createTestRun(request);
