@@ -18,9 +18,11 @@ import * as vscode from 'vscode';
 
 import { HDLRegressionTestController } from './HDLRegression/HDLRegressionTestController';
 
-export async function activate(context: vscode.ExtensionContext) {
+let testController : HDLRegressionTestController;
+
+export async function activate(context: vscode.ExtensionContext) : Promise<HDLRegressionTestController> {
     
     //create instance of test-controller for HDLRegression
-    let testController : HDLRegressionTestController = new HDLRegressionTestController(context);
-    
+    testController = new HDLRegressionTestController(context);
+    return testController;
 }
