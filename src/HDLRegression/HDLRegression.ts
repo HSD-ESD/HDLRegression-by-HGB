@@ -11,7 +11,7 @@ import { ChildProcess, spawn } from 'child_process';
 import kill = require('tree-kill');
 import readline = require('readline');
 import uuid = require('uuid-random');
-import { HDLRegressionData, HDLRegressionFile, HDLRegressionTest } from './HDLRegressionPackage';
+import { HDLRegressionData, HDLRegressionFile, HDLRegressionTest, HDLRegressionTests } from './HDLRegressionPackage';
 
 //module-internal constants
 const cHDLRegressionLtcMatcher : RegExp = /^TC:(\d+)\s+-\s+(\w+)\.(\w+)\.(\w+)/;
@@ -126,49 +126,26 @@ export class HDLRegression {
         return data;
     }
 
-
     public async GetTestcases(hdlregressionScript : string): Promise<HDLRegressionTest[]> {
-        
-        const options = ['-ltc'];
 
-        let HDLRegressionTestCases : HDLRegressionTest[] = new Array<HDLRegressionTest>();
+        const scriptDir = path.dirname(hdlregressionScript);
+        const testcasesJsonPath = path.join(scriptDir, `${uuid()}.json`);
+        
+        const options = [`-etj ${testcasesJsonPath}`];
+
+        let HDLRegressionTests : HDLRegressionTest[] = [];
         let hdlregressionProcess : any;
 
-        await this.Run(hdlregressionScript, options, (hdlregression: ChildProcess) => {
+        await this.Run(hdlregressionScript, options);
 
-            hdlregressionProcess = hdlregression;
+        try {
+            HDLRegressionTests = JSON.parse(fs.readFileSync(testcasesJsonPath, 'utf-8'));
+            fs.unlinkSync(testcasesJsonPath);
+        } catch(err) {
+            console.log(err);
+        }   
             
-            readline
-                .createInterface({
-                    input: hdlregressionProcess.stdout,
-                    terminal: false,
-                })
-                .on('line', (line: string) => 
-                {
-                    const HDLRegressionTestCase = cHDLRegressionLtcMatcher.exec(line);
-
-                    if(HDLRegressionTestCase)
-                    {
-                        const testCaseID = parseInt(HDLRegressionTestCase[1]);
-                        const testBench = HDLRegressionTestCase[2];
-                        const testCaseArchitecture = HDLRegressionTestCase[3];
-                        const testCaseName = HDLRegressionTestCase[4];
-
-                        const regressionTestCase : HDLRegressionTest =
-                        {
-                            testcase_id : testCaseID,
-                            testbench : testBench,
-                            architecture : testCaseArchitecture,
-                            name : testCaseName
-                        };
-
-                        HDLRegressionTestCases.push(regressionTestCase);
-                    }
-                });
-            
-            });
-            
-        return HDLRegressionTestCases;
+        return HDLRegressionTests;
     }
 
     public async GetFiles(hdlregressionScript : string): Promise<HDLRegressionFile[]> {

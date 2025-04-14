@@ -38,12 +38,14 @@ Contributing in the form of code, documentation, feedback, tutorial, ideas or bu
 
 The following configuration properties are available:
 
-Property                              | Description
---------------------------------------|---------------------------------------------------------------
-`"hdlregression-by-hgb.scriptname"`           | consistent script-name of all regression-scripts
-`hdlregression-by-hgb.python`                 | Path to python executable.
-`hdlregression-by-hgb.shellOptions`           | HDLRegression command line options when running tests.
-`hdlregression-by-hgb.guiOptions`             | HDLRegression command line options when running GUI (-g should not be added here).
+Property                                                | Description
+--------------------------------------------------------|---------------------------------------------------------------
+`"hdlregression-by-hgb.scriptname"`                     | consistent script-name of all regression-scripts
+`hdlregression-by-hgb.python`                           | Path to python executable.
+`hdlregression-by-hgb.shellOptions`                     | HDLRegression command line options when running tests.
+`hdlregression-by-hgb.guiOptions`                       | HDLRegression command line options when running GUI (-g should not be added here).
+`hdlregression-by-hgb.showExecutionTime`                | Display Execution-Time for every testcase
+`hdlregression-by-hgb.executeMultipleGuiTestcases`      | Executing multiple GUI-Testcases at once
 
 ## Related Projects
 - VUnit is an alternative to HDLRegression. Use [VUnitByHGB](https://github.com/HSD-ESD/VUnit-by-HGB)to run VUnit tests from the VS-Code sidebar.

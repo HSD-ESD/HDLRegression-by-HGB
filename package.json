@@ -70,6 +70,16 @@
                     "description": "HDLRegression command line options when running GUI",
                     "type": "string",
                     "default": ""
+                },
+                "hdlregression-by-hgb.executeMultipleGuiTestcases": {
+                    "description": "Executing multiple GUI-Testcases at once",
+                    "type": "boolean",
+                    "default": false
+                },
+                "hdlregression-by-hgb.showExecutionTime": {
+                    "description": "Display Execution-Time for every testcase",
+                    "type": "boolean",
+                    "default": true
                 }
             }
         },

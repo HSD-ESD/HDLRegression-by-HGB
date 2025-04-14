@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import exp = require("constants");
 import readline = require('readline');
+import kill = require('tree-kill');
 import { ChildProcess } from "child_process";
 import { HDLRegressionFile, HDLRegressionTest } from "./HDLRegressionPackage";
 
@@ -14,8 +15,21 @@ import { HDLRegressionFile, HDLRegressionTest } from "./HDLRegressionPackage";
 // module-internal constants
 //--------------------------------------------
 
+const cEmptyTest : HDLRegressionTest = {
+    testcase_id: 0,
+    testcase_name: "",
+    name: "",
+    architecture: "",
+    testcase: "",
+    hdl_file_name: "",
+    hdl_file_path: "",
+    hdl_file_lib: "",
+    language: "UNKNOWN"
+};
+
 //TestBench-Status-Matcher
 const cHDLRegressionTestEnd : RegExp = /Result: (PASS|FAIL)/;
+const cHDLRegressionTimedTestEnd : RegExp = /Result: (PASS|FAIL)(?: \((\d+)h:(\d+)m:(\d+)s\))?/;
 const cHDLRegressionTestStart : RegExp = /Running: (\S+)\.(\S+)\.(\S+)\.(\S+)\s+\(test_id: (\d+)\)/;
 
 export class HDLRegressionTestController {
@@ -90,18 +104,36 @@ export class HDLRegressionTestController {
         //specific selection of elements from User-Interface should be run
         if (request.include) {
 
-            //set all selected testcases to "running-mode" for spinning wheel in UI
-            await Promise.all(request.include.map(t => this.runNode(t, request, run)));
-
             //execute selected test-cases on console
             if (request.profile?.kind === vscode.TestRunProfileKind.Run)
             {
-                await this.RunHDLRegressionTestsShell(request.include[0], run);
+                //set all selected testcases to "running-mode" for spinning wheel in UI
+                await Promise.all(request.include.map(t => this.traverseNode(t, request, run, startNode)));
+                await this.RunHDLRegressionTestsShell(request.include[0], request, run);
             }
             //execute selected test-cases in GUI
             else if (request.profile?.kind === vscode.TestRunProfileKind.Debug)
             {
-                await this.RunHDLRegressionTestsGUI(request.include[0], run);
+                if (request.include[0].children.size > 0)
+                {
+                    // read configuration from vscode-settings
+                    const multipleGuiTestcases = vscode.workspace
+                        .getConfiguration()
+                        .get('hdlregression-by-hgb.executeMultipleGuiTestcases') as boolean;
+
+                    if (!multipleGuiTestcases) 
+                    {
+                        vscode.window.showErrorMessage("Executing multiple testcases in GUI-Mode: disabled!");
+                    }
+                    else
+                    {
+                        await this.RunHDLRegressionTestsGUI(request.include[0], request, run);
+                    }
+                }
+                else
+                {
+                    await this.RunHDLRegressionTestsGUI(request.include[0], request, run);
+                }
             }
 
         } 
@@ -112,7 +144,7 @@ export class HDLRegressionTestController {
             const TopLevelItems : vscode.TestItem[] = mapTestItems(this.mTestController.items, item => item); 
 
             //set all testcases to "enqueued-mode" in UI
-            Promise.all(TopLevelItems.map(t => this.enqueueNode(t, request, run)));
+            await Promise.all(TopLevelItems.map(t => this.traverseNode(t, request, run, enqueueNode)));
 
             //execute all test-cases on console
             if (request.profile?.kind === vscode.TestRunProfileKind.Run)
@@ -120,16 +152,28 @@ export class HDLRegressionTestController {
                 for(const item of TopLevelItems)
                 {
                     //set all selected testcases to "running-mode" for spinning wheel in UI
-                    await this.runNode(item, request, run);
-                    await this.RunHDLRegressionTestsShell(item, run);
+                    await this.traverseNode(item, request, run, startNode);
+                    await this.RunHDLRegressionTestsShell(item, request, run);
                 }
             }
             //execute all test-cases in GUI
             else if (request.profile?.kind === vscode.TestRunProfileKind.Debug)
             {
-                for(const item of TopLevelItems)
+                // read configuration from vscode-settings
+                const multipleGuiTestcases = vscode.workspace
+                    .getConfiguration()
+                    .get('hdlregression-by-hgb.executeMultipleGuiTestcases') as boolean;
+
+                if (!multipleGuiTestcases) 
                 {
-                    await this.RunHDLRegressionTestsGUI(item, run);
+                    vscode.window.showErrorMessage("Executing all testcases in GUI-Mode: disabled!");
+                }
+                else
+                {
+                    for(const item of TopLevelItems)
+                    {
+                        await this.RunHDLRegressionTestsShell(item, request, run);
+                    }
                 }
             }
         }
@@ -165,33 +209,44 @@ export class HDLRegressionTestController {
         this.mTestController.items.add(scriptItem);
 
         // add all testcases to specified HDLRegression-Script-testcase-item
-        for(const testcase of tests)
+        for(const test of tests)
         {
+            // get item of library
+            const libraryID = getLibraryItemId(hdlregressionScript, test.hdl_file_lib);
+            let libraryItem : vscode.TestItem | undefined = scriptItem.children.get(libraryID);
+
+            // create node for library if not existing yet
+            if (!libraryItem)
+            {
+                libraryItem = this.mTestController.createTestItem(libraryID, test.hdl_file_lib);
+                scriptItem.children.add(libraryItem);
+            }
+
             // get item of testbench
-            const testBenchID = hdlregressionScript.concat("|", testcase.testbench);
-            let testBenchItem : vscode.TestItem | undefined = scriptItem.children.get(testBenchID);
+            const testBenchItemID = getTestBenchItemId(hdlregressionScript, test.hdl_file_lib, test.name);
+            let testBenchItem : vscode.TestItem | undefined = libraryItem.children.get(testBenchItemID);
             
             //create node for testbench if not existing yet
             if (!testBenchItem)
             {
-                testBenchItem = this.mTestController.createTestItem(testBenchID, testcase.testbench);
-                scriptItem.children.add(testBenchItem);
+                testBenchItem = this.mTestController.createTestItem(testBenchItemID, test.name, vscode.Uri.file(test.hdl_file_path));
+                libraryItem.children.add(testBenchItem);
             }
 
             // get item of architecture
-            const testBenchArchitectureID = hdlregressionScript.concat("|", testcase.testbench, ".", testcase.architecture);
+            const testBenchArchitectureID = getArchitectureItemId(hdlregressionScript, test.hdl_file_lib, test.name, test.architecture);
             let testBenchArchitectureItem : vscode.TestItem | undefined = testBenchItem.children.get(testBenchArchitectureID);
             
             //create node for architecture if not existing yet
             if (!testBenchArchitectureItem)
             {
-                testBenchArchitectureItem = this.mTestController.createTestItem(testBenchArchitectureID, testcase.architecture);
+                testBenchArchitectureItem = this.mTestController.createTestItem(testBenchArchitectureID, test.architecture);
                 testBenchItem.children.add(testBenchArchitectureItem);
             }
 
             //create node for testcase
-            const testCaseID : string = hdlregressionScript.concat("|", testcase.testbench, ".", testcase.architecture, ".", testcase.name, "|", testcase.testcase_id.toString());
-            const testCaseItem : vscode.TestItem = this.mTestController.createTestItem(testCaseID, testcase.name);
+            const testCaseID : string = getTestCaseItemId(hdlregressionScript, test.hdl_file_lib, test.name, test.architecture, test.testcase, test.testcase_id);
+            const testCaseItem : vscode.TestItem = this.mTestController.createTestItem(testCaseID, test.testcase);
 
             testBenchArchitectureItem.children.add(testCaseItem);
         }
@@ -199,50 +254,25 @@ export class HDLRegressionTestController {
         return true;
     }
 
-    
-    private async runNode(
+    private async traverseNode(
         node: vscode.TestItem,
 	    request: vscode.TestRunRequest,
 	    run: vscode.TestRun,
-    ): Promise<void> 
+        callback : (node: vscode.TestItem, run : vscode.TestRun) => void
+    ) : Promise<void>
     {
-        // check for filter on test
         if (request.exclude?.includes(node)) {
             return;
         }
 
-        if (node.children.size > 0) 
-        {  
-            // recurse and run all children if this is a "suite"
-            Promise.all(mapTestItems(node.children, t => this.runNode(t, request, run)));
+        if (node.children.size > 0)
+        {
+            // recurse all children if this is a "suite"
+            await Promise.all(mapTestItems(node.children, t => this.traverseNode(t, request, run, callback)));
         }
         else
         {
-            //bottom-item was reached -> set this testcase to mode "running"
-            //(spinning wheel in User-Interface)
-            run.started(node);
-        }
-    }
-
-    private async enqueueNode(
-        node: vscode.TestItem,
-	    request: vscode.TestRunRequest,
-	    run: vscode.TestRun,
-    ): Promise<void> 
-    {
-        // check for filter on test
-        if (request.exclude?.includes(node)) {
-            return;
-        }
-
-        if (node.children.size > 0) 
-        {
-            // recurse and enqueue all children if this is a "suite"
-            Promise.all(mapTestItems(node.children, t => this.enqueueNode(t, request, run)));
-        }
-        else
-        {
-            run.enqueued(node);
+            callback(node, run);
         }
     }
 
@@ -264,28 +294,47 @@ export class HDLRegressionTestController {
         return undefined;
     }
 
-    private async RunHDLRegressionTestsShell(node : vscode.TestItem, run: vscode.TestRun) : Promise<void>
+    private async RunHDLRegressionTestsShell(node : vscode.TestItem, request: vscode.TestRunRequest, run: vscode.TestRun) : Promise<void>
     {
         //extract HDLRegressionScript path
         const HDLRegressionScript = node.id.split('|')[0];
 
-        let testCaseWildCard : string = "";
         let command : string = "";
+
+        //wildcard-appendix
+        let testCaseWildCard : string = "";
+
+        const item = node.parent;
 
         //check for top-level node
         if(node.parent)
         {
-            command = "-tc";
+            command = "-tc";    // selected testcase
 
-            //check, if this node is a bottom-level node
-            if(node.children.size === 0)
+            //check, if this node is a test-suite
+            if(node.children.size > 0)
             {
-                testCaseWildCard = node.id.split('|')[2];
+                const fullTestCaseId = node.id.split('|')[1];
+                const testcaseComponents = fullTestCaseId.split('.');
+                // running all testcases of a library is currenly not possible...
+                const testcaseComponentsWithoutLibrary = testcaseComponents.slice(1);
+
+                if (testcaseComponentsWithoutLibrary.length > 0) {
+                    const fullTestCaseIdWithoutLibrary = testcaseComponentsWithoutLibrary.join('.');
+                    testCaseWildCard = fullTestCaseIdWithoutLibrary + ".*";
+                } else {
+                    // running all testcases of a library is currenly not possible => run full regression for now
+                    command = "-fr";    // full regression
+                }
+                
             }
-            else
-            {
-                testCaseWildCard = node.id.split('|')[1];
+            // node is a bottom-level-node
+            else {
+                testCaseWildCard = node.id.split('|')[2];   // run testcase by id
             }
+        }
+        else {
+            command = "-fr";    // full regression
         }
 
         //Command-Line-Arguments for HDLRegression
@@ -298,15 +347,34 @@ export class HDLRegressionTestController {
             options.push(hdlregressionOptions as string);
         }   
 
+        const showExecutionTime = vscode.workspace
+            .getConfiguration()
+            .get('hdlregression-by-hgb.showExecutionTime') as boolean;
+
         //variable for referencing output from HDLRegression-process to analyse its output
         let hdlregressionProcess : any;
 
         //launch HDLRegression-process with given arguments from above
         await this.mHDLRegression.Run(HDLRegressionScript, options, (hdlregression: ChildProcess) => {
 
+            // handle cancellation of test-suite
+            let disposable = run.token.onCancellationRequested(() => {
+                killProcess(hdlregression);
+                this.traverseNode(node, request, run, skipRunningNode);
+            });
+            this.mContext.subscriptions.push(disposable);
+
+            // append output to testcase
+            hdlregression.stdout?.on('data', (data : string) => {
+                run.appendOutput(data);
+            });
+            hdlregression.stderr?.on('data', (data : string) => {
+                run.appendOutput(data);
+            });
+
             hdlregressionProcess = hdlregression;
 
-            let currentTestCase : HDLRegressionTest | undefined;
+            let currentTestCase : HDLRegressionTest | undefined = undefined;
             
             readline
                 .createInterface({
@@ -318,19 +386,20 @@ export class HDLRegressionTestController {
                     const regressionTest = cHDLRegressionTestStart.exec(line);
                     if(regressionTest)
                     {
-                        currentTestCase = 
-                        {
-                            testbench : regressionTest[2],
-                            architecture : regressionTest[3],
-                            name : regressionTest[4],
-                            testcase_id : parseInt(regressionTest[5])
-                        };
+                        // init with default values
+                        currentTestCase = cEmptyTest;
+                        // fill in parsed values
+                        currentTestCase.hdl_file_lib = regressionTest[1];
+                        currentTestCase.name = regressionTest[2];
+                        currentTestCase.architecture = regressionTest[3];
+                        currentTestCase.testcase = regressionTest[4];
+                        currentTestCase.testcase_id = parseInt(regressionTest[5]);
                     }
                     
                     if(currentTestCase)
                     {
                         //check for success/failure of TestCase
-                        this.MatchTestCaseStatus(line, currentTestCase, node, run, HDLRegressionScript);
+                        this.MatchTestCaseStatus(line, currentTestCase, node, run, HDLRegressionScript, showExecutionTime);
                     }
 
                 });
@@ -343,28 +412,47 @@ export class HDLRegressionTestController {
 
     }
 
-    private async RunHDLRegressionTestsGUI(node: vscode.TestItem, run: vscode.TestRun) : Promise<void>
+    private async RunHDLRegressionTestsGUI(node : vscode.TestItem, request: vscode.TestRunRequest, run: vscode.TestRun) : Promise<void>
     {
         //extract HDLRegressionScript path
         const HDLRegressionScript = node.id.split('|')[0];
 
-        let testCaseWildCard : string = "";
         let command : string = "";
+
+        //wildcard-appendix
+        let testCaseWildCard : string = "";
+
+        const item = node.parent;
 
         //check for top-level node
         if(node.parent)
         {
-            command = "-tc";
+            command = "-tc";    // selected testcase
 
-            //check, if this node is a bottom-level node
-            if(node.children.size === 0)
+            //check, if this node is a test-suite
+            if(node.children.size > 0)
             {
-                testCaseWildCard = node.id.split('|')[2];
+                const fullTestCaseId = node.id.split('|')[1];
+                const testcaseComponents = fullTestCaseId.split('.');
+                // running all testcases of a library is currenly not possible...
+                const testcaseComponentsWithoutLibrary = testcaseComponents.slice(1);
+
+                if (testcaseComponentsWithoutLibrary.length > 0) {
+                    const fullTestCaseIdWithoutLibrary = testcaseComponentsWithoutLibrary.join('.');
+                    testCaseWildCard = fullTestCaseIdWithoutLibrary + ".*";
+                } else {
+                    // running all testcases of a library is currenly not possible => run full regression for now
+                    command = "-fr";    // full regression
+                }
+                
             }
-            else
-            {
-                testCaseWildCard = node.id.split('|')[1];
+            // node is a bottom-level-node
+            else {
+                testCaseWildCard = node.id.split('|')[2];   // run testcase by id
             }
+        }
+        else {
+            command = "-fr";    // full regression
         }
 
         //Command-Line-Arguments for HDLRegression
@@ -378,31 +466,69 @@ export class HDLRegressionTestController {
         }   
 
         //launch HDLRegression-process with given arguments from above
-        await this.mHDLRegression.Run(HDLRegressionScript, options);
+        await this.mHDLRegression.Run(HDLRegressionScript, options, (hdlregression : ChildProcess) => {
+            // handle cancellation of test-suite
+            let disposable = run.token.onCancellationRequested(() => {
+                killProcess(hdlregression);
+                this.traverseNode(node, request, run, skipRunningNode);
+            });
+            this.mContext.subscriptions.push(disposable);
+
+            // append output to testcase
+            hdlregression.stdout?.on('data', (data : string) => {
+                run.appendOutput(data);
+            });
+            hdlregression.stderr?.on('data', (data : string) => {
+                run.appendOutput(data);
+            });
+        });
     }
 
-    private MatchTestCaseStatus(line : string, testCase : HDLRegressionTest, node : vscode.TestItem, run : vscode.TestRun, hdlregressionScript : string) : void
+    private MatchTestCaseStatus(line : string, testCase : HDLRegressionTest, node : vscode.TestItem, run : vscode.TestRun, hdlregressionScript : string, showExecutionTime : boolean) : void
     {
+        let testCaseMatcher : RegExp = cHDLRegressionTestEnd;
+        if (showExecutionTime) {
+            testCaseMatcher = cHDLRegressionTimedTestEnd;
+        }
+
         //check for pass or fail
-        const result = cHDLRegressionTestEnd.exec(line);
+        const result = testCaseMatcher.exec(line);
         if (result) {
 
+            const status = result[1];
+            let executionTime : number | undefined = undefined;
+
+            if (showExecutionTime) {
+                const hours = parseInt(result[2]);
+                const minutes = parseInt(result[3]);
+                const seconds = parseInt(result[4]);
+
+                executionTime = (hours * 3600 + minutes * 60 + seconds) * 1000;
+            }
+
             //get related test-item
-            const item = this.findNode(hdlregressionScript + "|" + testCase.testbench + "." + testCase.architecture + "." + testCase.name + "|" + testCase.testcase_id.toString(), node);
+            const itemId = getTestCaseItemId(hdlregressionScript, testCase.hdl_file_lib, testCase.name, testCase.architecture, testCase.testcase, testCase.testcase_id);
+            const item = this.findNode(itemId, node);
+
+            if (!item) {
+                return;
+            }
+
+            item.busy = false;
 
             //evaluate result
             if(result[1] === 'PASS')
             {
                 if(item) 
                 { 
-                    run.passed(item); 
+                    run.passed(item, executionTime); 
                 }
             }
             else
             {
                 if(item) 
                 { 
-                    run.failed(item, new vscode.TestMessage(result[2] + " failed!")); 
+                    run.failed(item, new vscode.TestMessage(result[2] + " failed!"), executionTime); 
                 }
             }
         }
@@ -483,3 +609,54 @@ const mapTestItems = <T>(items: vscode.TestItemCollection, mapper: (t: vscode.Te
 	items.forEach(t => result.push(mapper(t)));
 	return result;
 };
+
+function killProcess(process : ChildProcess) : void 
+{
+    kill(process.pid);
+}
+
+function getTestCaseItemId(scriptPath : string, libraryName : string, testBenchName : string, architectureName : string, testcaseName : string, testCaseId : number) : string
+{
+    const architectureItemId : string = getArchitectureItemId(scriptPath, libraryName, testBenchName, architectureName);
+    const testCaseItemId : string = architectureItemId.concat(".", testcaseName, "|", testCaseId.toString());
+    return testCaseItemId;
+}
+
+function getLibraryItemId(scriptPath : string, libraryName : string) : string 
+{
+    const libraryItemId : string = scriptPath.concat("|", libraryName);
+    return libraryItemId;
+}
+
+function getTestBenchItemId(scriptPath : string, libraryName : string, testBenchName : string) : string 
+{
+    const libraryItemId : string = getLibraryItemId(scriptPath, libraryName);
+    const testBenchItemId : string = libraryItemId.concat(".", testBenchName);
+    return testBenchItemId;
+}
+
+function getArchitectureItemId(scriptPath : string, libraryName : string, testBenchName : string, architectureName : string) : string {
+    const testBenchItemId : string = getTestBenchItemId(scriptPath, libraryName, testBenchName);
+    const architectureItemId : string = testBenchItemId.concat(".", architectureName);
+    return architectureItemId;
+}
+
+function skipRunningNode(node : vscode.TestItem, run : vscode.TestRun) : void 
+{
+    if (node.busy)
+    {
+        node.busy = false;
+        run.skipped(node);
+    }
+}
+
+function startNode(node : vscode.TestItem, run : vscode.TestRun) : void 
+{
+    run.started(node);
+    node.busy = true;
+}
+
+function enqueueNode(node : vscode.TestItem, run : vscode.TestRun) : void 
+{
+    run.enqueued(node);
+}
