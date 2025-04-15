@@ -11,7 +11,7 @@ export interface HDLRegressionTest {
     testcase_name: string;
     name: string;
     architecture: string;
-    testcase: string;
+    testcase?: string;
     generics?: Record<string, string>; // Optional, since it may not always be present
     hdl_file_name: string;
     hdl_file_path: string;
