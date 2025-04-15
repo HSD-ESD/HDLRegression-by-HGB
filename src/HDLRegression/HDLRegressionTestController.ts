@@ -30,7 +30,7 @@ const cEmptyTest : HDLRegressionTest = {
 //TestBench-Status-Matcher
 const cHDLRegressionTestEnd : RegExp = /Result: (PASS|FAIL)/;
 const cHDLRegressionTimedTestEnd : RegExp = /Result: (PASS|FAIL)(?: \((\d+)h:(\d+)m:(\d+)s\))?/;
-const cHDLRegressionTestStart : RegExp = /Running: (\S+)\.(\S+)\.(\S+)\.(\S+)\s+\(test_id: (\d+)\)/;
+const cHDLRegressionTestStart: RegExp = /Running: (\S+)\.(\S+)\.(\S+)(?:\.(\S+))?\s+\(test_id: (\d+)\)/;
 
 export class HDLRegressionTestController {
 
@@ -244,11 +244,15 @@ export class HDLRegressionTestController {
                 testBenchItem.children.add(testBenchArchitectureItem);
             }
 
-            //create node for testcase
-            const testCaseID : string = getTestCaseItemId(hdlregressionScript, test.hdl_file_lib, test.name, test.architecture, test.testcase, test.testcase_id);
-            const testCaseItem : vscode.TestItem = this.mTestController.createTestItem(testCaseID, test.testcase);
+            // it is possible to have a single architecture as testcase without specifying multiple explicit testcases inside the architecture
+            if (test.testcase) {
+                //create node for testcase
+                const testCaseID : string = getTestCaseItemId(hdlregressionScript, test.hdl_file_lib, test.name, test.architecture, test.testcase);
+                const testCaseItem : vscode.TestItem = this.mTestController.createTestItem(testCaseID, test.testcase);
 
-            testBenchArchitectureItem.children.add(testCaseItem);
+                testBenchArchitectureItem.children.add(testCaseItem);
+            }
+            
         }
 
         return true;
@@ -299,46 +303,8 @@ export class HDLRegressionTestController {
         //extract HDLRegressionScript path
         const HDLRegressionScript = node.id.split('|')[0];
 
-        let command : string = "";
-
-        //wildcard-appendix
-        let testCaseWildCard : string = "";
-
-        const item = node.parent;
-
-        //check for top-level node
-        if(node.parent)
-        {
-            command = "-tc";    // selected testcase
-
-            //check, if this node is a test-suite
-            if(node.children.size > 0)
-            {
-                const fullTestCaseId = node.id.split('|')[1];
-                const testcaseComponents = fullTestCaseId.split('.');
-                // running all testcases of a library is currenly not possible...
-                const testcaseComponentsWithoutLibrary = testcaseComponents.slice(1);
-
-                if (testcaseComponentsWithoutLibrary.length > 0) {
-                    const fullTestCaseIdWithoutLibrary = testcaseComponentsWithoutLibrary.join('.');
-                    testCaseWildCard = fullTestCaseIdWithoutLibrary + ".*";
-                } else {
-                    // running all testcases of a library is currenly not possible => run full regression for now
-                    command = "-fr";    // full regression
-                }
-                
-            }
-            // node is a bottom-level-node
-            else {
-                testCaseWildCard = node.id.split('|')[2];   // run testcase by id
-            }
-        }
-        else {
-            command = "-fr";    // full regression
-        }
-
         //Command-Line-Arguments for HDLRegression
-        let options = [command, testCaseWildCard, "--noColor"];
+        let options = createCommandLineArgumentsForTestRun(node);
 
         const hdlregressionOptions = vscode.workspace
             .getConfiguration()
@@ -417,46 +383,10 @@ export class HDLRegressionTestController {
         //extract HDLRegressionScript path
         const HDLRegressionScript = node.id.split('|')[0];
 
-        let command : string = "";
-
-        //wildcard-appendix
-        let testCaseWildCard : string = "";
-
-        const item = node.parent;
-
-        //check for top-level node
-        if(node.parent)
-        {
-            command = "-tc";    // selected testcase
-
-            //check, if this node is a test-suite
-            if(node.children.size > 0)
-            {
-                const fullTestCaseId = node.id.split('|')[1];
-                const testcaseComponents = fullTestCaseId.split('.');
-                // running all testcases of a library is currenly not possible...
-                const testcaseComponentsWithoutLibrary = testcaseComponents.slice(1);
-
-                if (testcaseComponentsWithoutLibrary.length > 0) {
-                    const fullTestCaseIdWithoutLibrary = testcaseComponentsWithoutLibrary.join('.');
-                    testCaseWildCard = fullTestCaseIdWithoutLibrary + ".*";
-                } else {
-                    // running all testcases of a library is currenly not possible => run full regression for now
-                    command = "-fr";    // full regression
-                }
-                
-            }
-            // node is a bottom-level-node
-            else {
-                testCaseWildCard = node.id.split('|')[2];   // run testcase by id
-            }
-        }
-        else {
-            command = "-fr";    // full regression
-        }
-
         //Command-Line-Arguments for HDLRegression
-        let options = [command, testCaseWildCard, "--noColor" ,"-g"];
+        let options = createCommandLineArgumentsForTestRun(node);
+        // append gui-setting to arguments
+        options.push("-g");
 
         const hdlregressionOptions = vscode.workspace
             .getConfiguration()
@@ -507,7 +437,7 @@ export class HDLRegressionTestController {
             }
 
             //get related test-item
-            const itemId = getTestCaseItemId(hdlregressionScript, testCase.hdl_file_lib, testCase.name, testCase.architecture, testCase.testcase, testCase.testcase_id);
+            const itemId = getTestCaseItemId(hdlregressionScript, testCase.hdl_file_lib, testCase.name, testCase.architecture, testCase.testcase);
             const item = this.findNode(itemId, node);
 
             if (!item) {
@@ -615,10 +545,13 @@ function killProcess(process : ChildProcess) : void
     kill(process.pid);
 }
 
-function getTestCaseItemId(scriptPath : string, libraryName : string, testBenchName : string, architectureName : string, testcaseName : string, testCaseId : number) : string
+function getTestCaseItemId(scriptPath : string, libraryName : string, testBenchName : string, architectureName : string, testcaseName? : string) : string
 {
     const architectureItemId : string = getArchitectureItemId(scriptPath, libraryName, testBenchName, architectureName);
-    const testCaseItemId : string = architectureItemId.concat(".", testcaseName, "|", testCaseId.toString());
+    let testCaseItemId : string = architectureItemId; 
+    if (testcaseName) {
+        testCaseItemId = testCaseItemId.concat(".", testcaseName);
+    }
     return testCaseItemId;
 }
 
@@ -659,4 +592,52 @@ function startNode(node : vscode.TestItem, run : vscode.TestRun) : void
 function enqueueNode(node : vscode.TestItem, run : vscode.TestRun) : void 
 {
     run.enqueued(node);
+}
+
+function createCommandLineArgumentsForTestRun(node : vscode.TestItem) : string[] {
+    //extract HDLRegressionScript path
+    const HDLRegressionScript = node.id.split('|')[0];
+
+    let command : string = "";
+
+    //wildcard-appendix
+    let testCaseWildCard : string = "";
+
+    const item = node.parent;
+
+    //check for top-level node
+    if(node.parent)
+    {
+        command = "-tc";    // selected testcase/s
+
+        const fullTestCaseId = node.id.split('|')[1];
+        const testcaseComponents = fullTestCaseId.split('.');
+        // running all testcases of a library is currenly not possible...
+        const testcaseComponentsWithoutLibrary = testcaseComponents.slice(1);
+        const fullTestCaseIdWithoutLibrary = testcaseComponentsWithoutLibrary.join('.');
+
+        //check, if this node is a test-suite
+        if(node.children.size > 0)
+        {
+            if (testcaseComponentsWithoutLibrary.length > 0) {
+                testCaseWildCard = fullTestCaseIdWithoutLibrary + ".*";
+            } else {
+                // running all testcases of a library is currenly not possible => run full regression for now
+                command = "-fr";    // full regression
+            }
+            
+        }
+        // node is a bottom-level-node
+        else {
+            testCaseWildCard = fullTestCaseIdWithoutLibrary;
+        }
+    }
+    else {
+        command = "-fr";    // full regression
+    }
+
+    //Command-Line-Arguments for HDLRegression
+    let options = [command, testCaseWildCard, "--noColor"];
+
+    return options;
 }
