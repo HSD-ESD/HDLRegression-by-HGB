@@ -603,8 +603,6 @@ function createCommandLineArgumentsForTestRun(node : vscode.TestItem) : string[]
     //wildcard-appendix
     let testCaseWildCard : string = "";
 
-    const item = node.parent;
-
     //check for top-level node
     if(node.parent)
     {
@@ -612,24 +610,26 @@ function createCommandLineArgumentsForTestRun(node : vscode.TestItem) : string[]
 
         const fullTestCaseId = node.id.split('|')[1];
         const testcaseComponents = fullTestCaseId.split('.');
-        // running all testcases of a library is currenly not possible...
         const testcaseComponentsWithoutLibrary = testcaseComponents.slice(1);
+        const libraryName = testcaseComponents[0];
         const fullTestCaseIdWithoutLibrary = testcaseComponentsWithoutLibrary.join('.');
+
+        // this prefix is always needed, no matter which tests (single test, testsuite, ...) are run
+        testCaseWildCard = libraryName + ":";
 
         //check, if this node is a test-suite
         if(node.children.size > 0)
         {
             if (testcaseComponentsWithoutLibrary.length > 0) {
-                testCaseWildCard = fullTestCaseIdWithoutLibrary + ".*";
+                testCaseWildCard += fullTestCaseIdWithoutLibrary + ".*";
             } else {
-                // running all testcases of a library is currenly not possible => run full regression for now
-                command = "-fr";    // full regression
+                // execute all testcases of library
+                testCaseWildCard += "*";
             }
-            
         }
         // node is a bottom-level-node
         else {
-            testCaseWildCard = fullTestCaseIdWithoutLibrary;
+            testCaseWildCard += fullTestCaseIdWithoutLibrary;
         }
     }
     else {
