@@ -22,7 +22,7 @@ This Extension is maintained by Jakob Jungreuthmayer at [University of Applied S
     - Press the debug button to run a test in GUI mode
 
 ### Requirements
-- HDLRegression version 0.61 or higher
+- HDLRegression version 1.4.0 or higher
 
 ## History
 This Visual Studio Code extension was made by [Jakob Jungreuthmayer](https://github.com/jakobjung10) 
