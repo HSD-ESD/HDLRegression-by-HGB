@@ -374,7 +374,7 @@ export class HDLRegressionTestController {
         })
         .catch((err) => {
             run.failed(node, new vscode.TestMessage("Error in Execution of " + HDLRegressionScript));
-            node.busy = false;
+            this.traverseNode(node, request, run, setNodeUnbusy);
         });
 
     }
@@ -593,6 +593,11 @@ function startNode(node : vscode.TestItem, run : vscode.TestRun) : void
 function enqueueNode(node : vscode.TestItem, run : vscode.TestRun) : void 
 {
     run.enqueued(node);
+}
+
+function setNodeUnbusy(node : vscode.TestItem, run : vscode.TestRun) : void 
+{
+    node.busy = false;
 }
 
 function createCommandLineArgumentsForTestRun(node : vscode.TestItem) : string[] {
