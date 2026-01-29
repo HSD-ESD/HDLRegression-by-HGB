@@ -136,7 +136,10 @@ export class HDLRegression {
         let HDLRegressionTests : HDLRegressionTest[] = [];
         let hdlregressionProcess : any;
 
-        await this.Run(hdlregressionScript, options);
+        await this.Run(hdlregressionScript, options)
+        .catch((err) => {
+            console.log(err);
+        });
 
         try {
             HDLRegressionTests = JSON.parse(fs.readFileSync(testcasesJsonPath, 'utf-8'));
@@ -194,7 +197,10 @@ export class HDLRegression {
                     }
                 });
             
-            });
+        })
+        .catch((err) => {
+            console.log(err);
+        });
             
         return HDLRegressionFiles;
     }

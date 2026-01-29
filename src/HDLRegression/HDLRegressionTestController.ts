@@ -374,6 +374,7 @@ export class HDLRegressionTestController {
         })
         .catch((err) => {
             run.failed(node, new vscode.TestMessage("Error in Execution of " + HDLRegressionScript));
+            node.busy = false;
         });
 
     }
